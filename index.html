@@ -12,8 +12,7 @@
         h1 { font-size: 22px; margin: 0 0 8px; color: #222; }
         h3 { font-size: 16px; margin: 24px 0 12px; color: #222; }
         .subtitle { color: #666; font-size: 14px; margin-bottom: 20px; }
-        .upload-area { border: 2px dashed #b8c4d4; padding: 30px 20px; text-align: center; border-radius: 10px; margin: 16px 0; cursor: pointer; transition: all 0.2s; background: #fafcff; }
-        .upload-area:hover, .upload-area:active { border-color: #007bff; background: #eef6ff; }
+        .upload-area { border: 2px dashed #b8c4d4; padding: 30px 20px; text-align: center; border-radius: 10px; margin: 16px 0; cursor: pointer; background: #fafcff; }
         .upload-area p { margin: 6px 0; }
         .upload-icon { font-size: 32px; }
         .btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
@@ -35,6 +34,7 @@
         #coordinates { font-family: 'Courier New', monospace; background: #f0f4f8; padding: 12px 14px; border-radius: 6px; display: none; font-size: 13px; color: #1a3a5c; margin: 12px 0; }
         #coordinates a { color: #007bff; text-decoration: none; font-weight: 600; }
         .footer { text-align: center; color: #999; font-size: 12px; margin-top: 24px; }
+        .debug-section { background: #fffef5; border: 1px solid #f0e6c0; border-radius: 8px; padding: 12px; margin: 16px 0; }
     </style>
 </head>
 <body>
@@ -60,6 +60,7 @@
         <div id="coordinates"></div>
         <div id="map"></div>
 
+        <!-- Full metadata table -->
         <div id="metadataContainer" style="display:none;">
             <h3>📊 Extracted Metadata</h3>
             <table class="data-table" id="metadataTable">
@@ -68,10 +69,20 @@
             </table>
         </div>
 
-        <div id="debugContainer" style="display:none; margin-top: 24px;">
-            <h3>🔬 Raw GPS Data (For Diagnosis)</h3>
-            <table class="data-table" id="debugTable">
+        <!-- GPS diagnostic -->
+        <div id="gpsDebugContainer" class="debug-section" style="display:none;">
+            <h3>🔬 GPS Diagnostic — Raw Values</h3>
+            <table class="data-table" id="gpsDebugTable">
                 <thead><tr><th>Tag</th><th>Raw Value</th></tr></thead>
+                <tbody></tbody>
+            </table>
+        </div>
+
+        <!-- Full dump -->
+        <div id="fullDumpContainer" style="display:none;">
+            <h3>🔬 Full Metadata Dump (Every Tag)</h3>
+            <table class="data-table" id="fullDumpTable">
+                <thead><tr><th>Tag</th><th>Value</th></tr></thead>
                 <tbody></tbody>
             </table>
         </div>
@@ -93,46 +104,74 @@
             document.getElementById('fileInputFiles').value = '';
         }
 
-        // Convert [deg, min, sec] rational array to decimal degrees
-        function dmsArrayToDecimal(arr) {
-            if (!arr) return null;
-            let deg, min, sec;
-
-            if (Array.isArray(arr)) {
-                deg = rationalToFloat(arr[0]);
-                min = rationalToFloat(arr[1]);
-                sec = rationalToFloat(arr[2]);
-            } else if (typeof arr === 'object' && arr.numerator !== undefined) {
-                // Single rational: {numerator, denominator}
-                deg = arr.numerator / arr.denominator;
-                return deg;
-            } else if (typeof arr === 'object') {
-                // Object with {0: {numerator, denominator}, 1: {...}, 2: {...}}
-                deg = rationalToFloat(arr[0]);
-                min = rationalToFloat(arr[1]);
-                sec = rationalToFloat(arr[2]);
-            } else if (typeof arr === 'number') {
-                return arr;
-            } else {
-                return null;
-            }
-
-            if (deg === null || min === null || sec === null) return null;
-            return deg + min / 60 + sec / 3600;
-        }
-
-        function rationalToFloat(val) {
-            if (val === null || val === undefined) return null;
-            if (typeof val === 'number') return val;
-            if (typeof val === 'string') return parseFloat(val);
-            if (typeof val === 'object') {
-                if (val.numerator !== undefined && val.denominator !== undefined) {
-                    if (val.denominator === 0) return 0;
-                    return val.numerator / val.denominator;
+        // Convert many possible rational representations into a float
+        function toFloat(v) {
+            if (v === null || v === undefined) return null;
+            if (typeof v === 'number') return isNaN(v) ? null : v;
+            if (typeof v === 'string') {
+                // Might be "17/1" or "17.5"
+                if (v.includes('/')) {
+                    const [n, d] = v.split('/').map(Number);
+                    if (d === 0) return 0;
+                    return n / d;
                 }
-                if (val.value !== undefined) return parseFloat(val.value);
+                const f = parseFloat(v);
+                return isNaN(f) ? null : f;
+            }
+            if (typeof v === 'object') {
+                if (v.numerator !== undefined && v.denominator !== undefined) {
+                    if (v.denominator === 0) return 0;
+                    return v.numerator / v.denominator;
+                }
+                if (v.value !== undefined) return toFloat(v.value);
+                if (v.description !== undefined) return toFloat(v.description);
             }
             return null;
+        }
+
+        // Try everything to convert a GPS coordinate tag to a decimal number
+        function parseGPSCoord(tag, ref) {
+            if (!tag) return null;
+
+            // Method 1: tag.description is a usable number
+            const descNum = toFloat(tag.description);
+            if (descNum !== null && Math.abs(descNum) <= 180) return applyRef(descNum, ref);
+
+            // Method 2: tag.value is an array of 3 rationals [deg, min, sec]
+            const val = tag.value;
+            if (Array.isArray(val) && val.length >= 3) {
+                const d = toFloat(val[0]);
+                const m = toFloat(val[1]);
+                const s = toFloat(val[2]);
+                if (d !== null && m !== null && s !== null) {
+                    const dec = d + m / 60 + s / 3600;
+                    if (Math.abs(dec) <= 180) return applyRef(dec, ref);
+                }
+            }
+
+            // Method 3: tag.value is object {0:{},1:{},2:{}}
+            if (val && typeof val === 'object' && !Array.isArray(val)) {
+                const d = toFloat(val[0]);
+                const m = toFloat(val[1]);
+                const s = toFloat(val[2]);
+                if (d !== null && m !== null && s !== null) {
+                    const dec = d + m / 60 + s / 3600;
+                    if (Math.abs(dec) <= 180) return applyRef(dec, ref);
+                }
+            }
+
+            // Method 4: value is a single number (already decimal)
+            const valNum = toFloat(val);
+            if (valNum !== null && Math.abs(valNum) <= 180) return applyRef(valNum, ref);
+
+            return null;
+        }
+
+        function applyRef(decimal, ref) {
+            if (!ref) return decimal;
+            const r = String(ref.description || ref).trim().toUpperCase();
+            if (r.startsWith('S') || r.startsWith('W')) return -Math.abs(decimal);
+            return Math.abs(decimal);
         }
 
         async function handleFileSelect(e) {
@@ -145,7 +184,8 @@
 
             currentMetadata = {};
             document.getElementById('metadataContainer').style.display = 'none';
-            document.getElementById('debugContainer').style.display = 'none';
+            document.getElementById('gpsDebugContainer').style.display = 'none';
+            document.getElementById('fullDumpContainer').style.display = 'none';
             document.getElementById('coordinates').style.display = 'none';
             document.getElementById('map').style.display = 'none';
             document.getElementById('preview').style.display = 'none';
@@ -169,7 +209,7 @@
                 tags = await ExifReader.load(arrayBuffer, { expanded: true, includeUnknown: true });
             } catch (exifErr) {
                 status.className = 'status error';
-                status.textContent = '❌ No EXIF data found in this file.';
+                status.textContent = '❌ No EXIF data found.';
                 resetInputs();
                 return;
             }
@@ -177,16 +217,17 @@
             console.log('FULL EXIF TREE:', tags);
 
             const addData = (label, value) => {
-                if (value !== undefined && value !== null && value !== '' && value !== 'NaN') {
+                if (value !== undefined && value !== null && value !== '' && value !== 'NaN' && value !== 'undefined') {
                     currentMetadata[label] = String(value);
                 }
             };
 
-            // --- Standard EXIF ---
+            // Standard EXIF
             const exif = tags.exif || {};
             addData('Camera Make', exif.Make?.description);
             addData('Camera Model', exif.Model?.description);
             addData('Date Taken', exif.DateTimeOriginal?.description);
+            addData('Date Created', exif.DateTime?.description);
             addData('Aperture (F-Number)', exif.FNumber?.description);
             addData('Shutter Speed', exif.ExposureTime?.description);
             addData('ISO', exif.ISOSpeedRatings?.description);
@@ -194,125 +235,123 @@
             addData('Flash', exif.Flash?.description);
             addData('Orientation', exif.Orientation?.description);
             addData('Software', exif.Software?.description);
+            addData('White Balance', exif.WhiteBalance?.description);
+            addData('Metering Mode', exif.MeteringMode?.description);
 
-            // --- GPS: read raw values directly ---
+            // GPS decoding
             const gps = tags.gps || {};
-            let latDecimal = null, lonDecimal = null, gpsSource = '';
+            renderGpsDebugTable(gps);
 
-            // Show raw GPS values for diagnosis
-            renderDebugGps(gps);
+            let lat = null, lon = null, gpsSource = '';
 
-            // Try raw value first (ExifReader's `value` field contains raw array)
-            if (gps.GPSLatitude) {
-                const rawLat = gps.GPSLatitude.value || gps.GPSLatitude;
-                const rawLon = gps.GPSLongitude?.value || gps.GPSLongitude;
-                const rawLatRef = gps.GPSLatitudeRef?.value || gps.GPSLatitudeRef?.description;
-                const rawLonRef = gps.GPSLongitudeRef?.value || gps.GPSLongitudeRef?.description;
+            // Lat/Lon with reference
+            lat = parseGPSCoord(gps.GPSLatitude, gps.GPSLatitudeRef);
+            lon = parseGPSCoord(gps.GPSLongitude, gps.GPSLongitudeRef);
+            if (lat !== null && lon !== null) gpsSource = 'gps.GPSLatitude/Longitude';
 
-                console.log('Raw Lat:', rawLat);
-                console.log('Raw Lon:', rawLon);
-                console.log('Refs:', rawLatRef, rawLonRef);
-
-                let latVal = dmsArrayToDecimal(rawLat);
-                let lonVal = dmsArrayToDecimal(rawLon);
-
-                // Apply hemisphere sign
-                const latRefStr = String(rawLatRef || 'N').trim().toUpperCase();
-                const lonRefStr = String(rawLonRef || 'E').trim().toUpperCase();
-                if (latRefStr.startsWith('S') && latVal !== null) latVal = -Math.abs(latVal);
-                if (lonRefStr.startsWith('W') && lonVal !== null) lonVal = -Math.abs(lonVal);
-
-                if (latVal !== null && lonVal !== null && !isNaN(latVal) && !isNaN(lonVal)) {
-                    latDecimal = latVal;
-                    lonDecimal = lonVal;
-                    gpsSource = 'Raw GPS array';
-                }
-            }
-
-            // Fallback: standard descriptions (in case raw fails)
-            if ((latDecimal === null || lonDecimal === null) && gps.Latitude && gps.Longitude) {
-                const tryLat = parseFloat(gps.Latitude.description);
-                const tryLon = parseFloat(gps.Longitude.description);
-                if (!isNaN(tryLat) && !isNaN(tryLon)) {
-                    latDecimal = tryLat;
-                    lonDecimal = tryLon;
-                    gpsSource = 'GPS descriptions';
+            // Fallback: tags.Latitude / Longitude (ExifReader's computed ones)
+            if ((lat === null || lon === null) && gps.Latitude && gps.Longitude) {
+                const tryLat = toFloat(gps.Latitude.description);
+                const tryLon = toFloat(gps.Longitude.description);
+                if (tryLat !== null && tryLon !== null) {
+                    lat = tryLat; lon = tryLon; gpsSource = 'gps.Latitude/Longitude';
                 }
             }
 
             // Fallback: composite
-            if (latDecimal === null || lonDecimal === null) {
+            if (lat === null || lon === null) {
                 const composite = tags.composite || {};
                 if (composite.GPSLatitude && composite.GPSLongitude) {
-                    const tryLat = parseFloat(composite.GPSLatitude.description);
-                    const tryLon = parseFloat(composite.GPSLongitude.description);
-                    if (!isNaN(tryLat) && !isNaN(tryLon)) {
-                        latDecimal = tryLat;
-                        lonDecimal = tryLon;
-                        gpsSource = 'Composite';
+                    const tryLat = toFloat(composite.GPSLatitude.description);
+                    const tryLon = toFloat(composite.GPSLongitude.description);
+                    if (tryLat !== null && tryLon !== null) {
+                        lat = tryLat; lon = tryLon; gpsSource = 'composite';
                     }
                 }
             }
 
-            if (latDecimal !== null && lonDecimal !== null && !isNaN(latDecimal) && !isNaN(lonDecimal)) {
-                const latDMS = toDMS(latDecimal, 'N', 'S');
-                const lonDMS = toDMS(lonDecimal, 'E', 'W');
-                const plusCode = encodePlusCode(latDecimal, lonDecimal);
-                const gmapsLink = `https://www.google.com/maps?q=${latDecimal},${lonDecimal}`;
-                const osmLink = `https://www.openstreetmap.org/?mlat=${latDecimal}&mlon=${lonDecimal}#map=17/${latDecimal}/${lonDecimal}`;
+            if (lat !== null && lon !== null && !isNaN(lat) && !isNaN(lon)) {
+                const latDMS = toDMS(lat, 'N', 'S');
+                const lonDMS = toDMS(lon, 'E', 'W');
+                const plusCode = encodePlusCode(lat, lon);
+                const gmapsLink = `https://www.google.com/maps?q=${lat},${lon}`;
+                const osmLink = `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=17/${lat}/${lon}`;
 
-                addData('Latitude (Decimal)', latDecimal.toFixed(6));
-                addData('Longitude (Decimal)', lonDecimal.toFixed(6));
+                addData('Latitude (Decimal)', lat.toFixed(6));
+                addData('Longitude (Decimal)', lon.toFixed(6));
                 addData('Latitude (DMS)', latDMS);
                 addData('Longitude (DMS)', lonDMS);
                 addData('Plus Code', plusCode);
                 addData('GPS Source', gpsSource);
+                addData('Altitude', gps.Altitude?.description);
+                addData('GPS Date', gps.GPSDateStamp?.description);
+                addData('GPS Time', gps.GPSTimeStamp?.description);
 
-                showCoordinates(latDecimal, lonDecimal, latDMS, lonDMS, plusCode, gmapsLink, osmLink);
-                showMap(latDecimal, lonDecimal);
+                showCoordinates(lat, lon, latDMS, lonDMS, plusCode, gmapsLink, osmLink);
+                showMap(lat, lon);
 
                 status.className = 'status success';
-                status.textContent = '✅ GPS found: ' + latDecimal.toFixed(6) + ', ' + lonDecimal.toFixed(6);
+                status.textContent = `✅ GPS found (${gpsSource}): ${lat.toFixed(6)}, ${lon.toFixed(6)}`;
             } else {
                 status.className = 'status no-gps';
-                status.textContent = '⚠️ GPS tag exists but could not be decoded. See diagnostic table below.';
+                status.textContent = '⚠️ GPS data could not be decoded. See the diagnostic table below — send me a screenshot of it.';
             }
 
+            renderFullDump(tags);
             renderMetadataTable();
             resetInputs();
         }
 
-        function renderDebugGps(gps) {
-            const container = document.getElementById('debugContainer');
-            const tbody = document.querySelector('#debugTable tbody');
+        function renderGpsDebugTable(gps) {
+            const container = document.getElementById('gpsDebugContainer');
+            const tbody = document.querySelector('#gpsDebugTable tbody');
             tbody.innerHTML = '';
-            let count = 0;
+            const keys = Object.keys(gps);
+            if (keys.length === 0) { container.style.display = 'none'; return; }
 
-            for (const key in gps) {
+            keys.forEach(key => {
                 const item = gps[key];
                 let display = '';
-
                 if (item && typeof item === 'object') {
-                    if (item.value !== undefined) {
-                        display = 'value: ' + JSON.stringify(item.value);
-                        if (item.description !== undefined) display += ' | description: ' + item.description;
-                    } else {
-                        display = JSON.stringify(item);
-                    }
+                    display = 'value: ' + JSON.stringify(item.value) + ' | description: ' + JSON.stringify(item.description);
                 } else {
                     display = String(item);
                 }
-
-                if (display.length > 300) display = display.slice(0, 300) + '…';
+                if (display.length > 400) display = display.slice(0, 400) + '…';
                 const row = document.createElement('tr');
                 row.innerHTML = `<td><strong>${key}</strong></td><td style="font-family: monospace; font-size: 12px;">${display}</td>`;
                 tbody.appendChild(row);
-                count++;
-            }
+            });
+            container.style.display = 'block';
+        }
 
-            if (count > 0) {
-                container.style.display = 'block';
+        function renderFullDump(tags) {
+            const container = document.getElementById('fullDumpContainer');
+            const tbody = document.querySelector('#fullDumpTable tbody');
+            tbody.innerHTML = '';
+            let count = 0;
+
+            for (const groupName in tags) {
+                const group = tags[groupName];
+                if (typeof group !== 'object') continue;
+                for (const key in group) {
+                    const raw = group[key];
+                    let display = '';
+                    if (raw && typeof raw === 'object' && raw.description !== undefined) {
+                        display = String(raw.description);
+                    } else if (raw !== null && raw !== undefined) {
+                        display = String(raw);
+                    }
+                    if (display.length > 200) display = display.slice(0, 200) + '…';
+                    const row = document.createElement('tr');
+                    const highlight = /gps|lat|lon|location|plus/i.test(groupName + key);
+                    if (highlight) row.style.background = '#fff8dc';
+                    row.innerHTML = `<td><strong>${groupName}.${key}</strong></td><td>${display}</td>`;
+                    tbody.appendChild(row);
+                    count++;
+                }
             }
+            if (count > 0) container.style.display = 'block';
         }
 
         function toDMS(decimal, posDir, negDir) {
@@ -330,14 +369,14 @@
             const latV = lat + 90;
             const lonV = lon + 180;
             let code = '';
-            let latRem = latV;
-            let lonRem = lonV;
+            let latRem = latV, lonRem = lonV;
             for (let i = 0; i < 5; i++) {
-                const latDigit = Math.floor(latRem / Math.pow(20, 4 - i)) % 20;
-                const lonDigit = Math.floor(lonRem / Math.pow(20, 4 - i)) % 20;
+                const p = Math.pow(20, 4 - i);
+                const latDigit = Math.floor(latRem / p) % 20;
+                const lonDigit = Math.floor(lonRem / p) % 20;
                 code += alphabet[latDigit] + alphabet[lonDigit];
-                latRem = latRem % Math.pow(20, 4 - i);
-                lonRem = lonRem % Math.pow(20, 4 - i);
+                latRem = latRem % p;
+                lonRem = lonRem % p;
             }
             return code.slice(0, 8) + '+' + code.slice(8, 10);
         }
