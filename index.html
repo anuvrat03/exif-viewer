@@ -70,6 +70,15 @@
             </table>
         </div>
 
+        <div id="debugContainer" style="display:none; margin-top: 24px;">
+            <h3>🔬 Full Metadata Dump (All Tags Found)</h3>
+            <p style="font-size: 13px; color: #666;">This shows every single tag the library could find. Search for "GPS", "Lat", "Lon", or "Location" below to spot the coordinates.</p>
+            <table class="data-table" id="debugTable">
+                <thead><tr><th>Tag Name</th><th>Value</th></tr></thead>
+                <tbody></tbody>
+            </table>
+        </div>
+
         <div class="footer">Runs entirely in your browser · No data uploaded</div>
     </div>
 
@@ -97,6 +106,7 @@
 
             currentMetadata = {};
             document.getElementById('metadataContainer').style.display = 'none';
+            document.getElementById('debugContainer').style.display = 'none';
             document.getElementById('coordinates').style.display = 'none';
             document.getElementById('map').style.display = 'none';
             document.getElementById('preview').style.display = 'none';
@@ -106,7 +116,7 @@
                 arrayBuffer = await file.arrayBuffer();
             } catch (readErr) {
                 status.className = 'status error';
-                status.textContent = '❌ Could not read the file. Try "Pick from Files" or copy to Downloads.';
+                status.textContent = '❌ Could not read the file.';
                 resetInputs();
                 return;
             }
@@ -117,7 +127,7 @@
 
             let tags;
             try {
-                // expanded:true gives us the full tree — this is critical for finding GPS in all places
+                // Use both expanded:true and includeUnknown:true to get ALL tags
                 tags = await ExifReader.load(arrayBuffer, { expanded: true, includeUnknown: true });
             } catch (exifErr) {
                 status.className = 'status error';
@@ -126,7 +136,7 @@
                 return;
             }
 
-            console.log('Full EXIF tree:', tags); // Open DevTools to see the raw structure
+            console.log('FULL EXIF TREE:', tags);
 
             const addData = (label, value) => {
                 if (value !== undefined && value !== null && value !== '') {
@@ -149,20 +159,10 @@
             addData('Software', exif.Software?.description);
             addData('White Balance', exif.WhiteBalance?.description);
             addData('Metering Mode', exif.MeteringMode?.description);
-            addData('Exposure Program', exif.ExposureProgram?.description);
-            addData('Exposure Bias', exif.ExposureBiasValue?.description);
-            addData('Max Aperture', exif.MaxApertureValue?.description);
-            addData('Light Source', exif.LightSource?.description);
-            addData('Color Space', exif.ColorSpace?.description);
-            addData('Pixel Dimensions', exif.PixelXDimension && exif.PixelYDimension ? exif.PixelXDimension.description + ' x ' + exif.PixelYDimension.description : null);
-            addData('Resolution', exif.XResolution ? exif.XResolution.description + ' dpi' : null);
 
-            // --- Comprehensive GPS Extraction ---
-            // Try every possible location where GPS data might live
-            let latDecimal = null, lonDecimal = null;
-            let gpsSource = '';
+            // --- GPS hunt across ALL tag groups ---
+            let latDecimal = null, lonDecimal = null, gpsSource = '';
 
-            // 1) Standard GPS IFD (most common)
             const gps = tags.gps || {};
             if (gps.Latitude && gps.Longitude) {
                 latDecimal = parseFloat(gps.Latitude.description);
@@ -170,45 +170,47 @@
                 gpsSource = 'GPS IFD';
             }
 
-            // 2) Composite GPS (ExifReader computes these)
             const composite = tags.composite || {};
-            if ((!latDecimal || !lonDecimal) && composite.GPSLatitude && composite.GPSLongitude) {
-                latDecimal = parseFloat(composite.GPSLatitude.description || composite.GPSLatitude);
-                lonDecimal = parseFloat(composite.GPSLongitude.description || composite.GPSLongitude);
+            if ((!latDecimal || !lonDecimal) && (composite.GPSLatitude || composite.Latitude)) {
+                latDecimal = parseFloat(composite.GPSLatitude?.description || composite.Latitude?.description || composite.Latitude);
+                lonDecimal = parseFloat(composite.GPSLongitude?.description || composite.Longitude?.description || composite.Longitude);
                 gpsSource = 'Composite';
             }
 
-            // 3) XMP GPS
             const xmp = tags.xmp || {};
-            if ((!latDecimal || !lonDecimal) && xmp.GPSLatitude && xmp.GPSLongitude) {
-                latDecimal = parseFloat(xmp.GPSLatitude.description || xmp.GPSLatitude);
-                lonDecimal = parseFloat(xmp.GPSLongitude.description || xmp.GPSLongitude);
+            if ((!latDecimal || !lonDecimal) && (xmp.GPSLatitude || xmp.Latitude)) {
+                latDecimal = parseFloat(xmp.GPSLatitude?.description || xmp.Latitude?.description || xmp.Latitude);
+                lonDecimal = parseFloat(xmp.GPSLongitude?.description || xmp.Longitude?.description || xmp.Longitude);
                 gpsSource = 'XMP';
             }
 
-            // 4) EXIF GPSInfo fallback (some Samsung models write it here)
             if ((!latDecimal || !lonDecimal) && exif.GPSLatitude && exif.GPSLongitude) {
-                latDecimal = parseFloat(exif.GPSLatitude.description || exif.GPSLatitude);
-                lonDecimal = parseFloat(exif.GPSLongitude.description || exif.GPSLongitude);
+                latDecimal = parseFloat(exif.GPSLatitude.description);
+                lonDecimal = parseFloat(exif.GPSLongitude.description);
                 gpsSource = 'EXIF GPSInfo';
             }
 
-            // 5) Last resort: scan all top-level tags for anything GPS-like
-            if ((!latDecimal || !lonDecimal)) {
-                for (const key in tags) {
-                    if (/gps.*lat/i.test(key) && tags[key]?.description) {
-                        const val = parseFloat(tags[key].description);
-                        if (!isNaN(val) && Math.abs(val) <= 90) latDecimal = val;
-                    }
-                    if (/gps.*lon/i.test(key) && tags[key]?.description) {
-                        const val = parseFloat(tags[key].description);
-                        if (!isNaN(val) && Math.abs(val) <= 180) lonDecimal = val;
+            // Fallback: scan every top-level group for GPS-like keys
+            if (!latDecimal || !lonDecimal) {
+                for (const groupName in tags) {
+                    const group = tags[groupName];
+                    if (typeof group !== 'object') continue;
+                    for (const key in group) {
+                        const val = group[key]?.description ?? group[key];
+                        if (typeof val === 'string' || typeof val === 'number') {
+                            if (/gps.*lat|^lat(itude)?$/i.test(key)) {
+                                const num = parseFloat(val);
+                                if (!isNaN(num) && Math.abs(num) <= 90) { latDecimal = num; gpsSource = `Fallback (${groupName}.${key})`; }
+                            }
+                            if (/gps.*lon|^lon(gitude)?$/i.test(key)) {
+                                const num = parseFloat(val);
+                                if (!isNaN(num) && Math.abs(num) <= 180) { lonDecimal = num; gpsSource = `Fallback (${groupName}.${key})`; }
+                            }
+                        }
                     }
                 }
-                if (latDecimal && lonDecimal) gpsSource = 'Fallback scan';
             }
 
-            // --- If GPS found, display it comprehensively ---
             if (latDecimal !== null && lonDecimal !== null && !isNaN(latDecimal) && !isNaN(lonDecimal)) {
                 const latDMS = toDMS(latDecimal, 'N', 'S');
                 const lonDMS = toDMS(lonDecimal, 'E', 'W');
@@ -223,26 +225,54 @@
                 addData('Plus Code', plusCode);
                 addData('GPS Source', gpsSource);
                 addData('Altitude', gps.Altitude?.description);
-                addData('GPS Date', gps.GPSDateStamp?.description);
-                addData('GPS Time', gps.GPSTimeStamp?.description);
-                addData('GPS Speed', gps.GPSSpeed?.description);
-                addData('GPS Direction', gps.GPSImgDirection?.description);
 
                 showCoordinates(latDecimal, lonDecimal, latDMS, lonDMS, plusCode, gmapsLink, osmLink);
                 showMap(latDecimal, lonDecimal);
 
                 status.className = 'status success';
-                status.textContent = '✅ Image processed successfully with GPS data (found in ' + gpsSource + ').';
+                status.textContent = '✅ GPS found via ' + gpsSource + '.';
             } else {
                 status.className = 'status no-gps';
-                status.textContent = '⚠️ No GPS data found in any of the standard locations (GPS IFD, Composite, XMP, EXIF). The photo was likely taken with Location OFF, or metadata was stripped.';
+                status.textContent = '⚠️ No GPS found in ANY tag. Scroll down to see the FULL dump and search for GPS, Lat, or Lon.';
             }
 
+            // --- FULL metadata dump: show every tag found ---
+            renderDebugTable(tags);
             renderMetadataTable();
             resetInputs();
         }
 
-        // Convert decimal degrees to Degrees/Minutes/Seconds format
+        function renderDebugTable(tags) {
+            const tbody = document.querySelector('#debugTable tbody');
+            tbody.innerHTML = '';
+            let count = 0;
+
+            for (const groupName in tags) {
+                const group = tags[groupName];
+                if (typeof group !== 'object') continue;
+                for (const key in group) {
+                    const raw = group[key];
+                    let display = '';
+                    if (raw && typeof raw === 'object' && raw.description !== undefined) {
+                        display = String(raw.description);
+                    } else if (raw !== null && raw !== undefined) {
+                        display = String(raw);
+                    }
+                    if (display.length > 200) display = display.slice(0, 200) + '…';
+                    const row = document.createElement('tr');
+                    const highlight = /gps|lat|lon|location|plus/i.test(groupName + key);
+                    row.style.background = highlight ? '#fff8dc' : '';
+                    row.innerHTML = `<td><strong>${groupName}.${key}</strong></td><td>${display}</td>`;
+                    tbody.appendChild(row);
+                    count++;
+                }
+            }
+
+            if (count > 0) {
+                document.getElementById('debugContainer').style.display = 'block';
+            }
+        }
+
         function toDMS(decimal, posDir, negDir) {
             const dir = decimal >= 0 ? posDir : negDir;
             const abs = Math.abs(decimal);
@@ -253,8 +283,6 @@
             return `${degrees}°${minutes}'${seconds}"${dir}`;
         }
 
-        // Generate a simple Plus Code (Open Location Code, abbreviated)
-        // This is a simplified version for display. Full spec: https://github.com/google/open-location-code
         function encodePlusCode(lat, lon) {
             const alphabet = '23456789CFGHJMPQRVWX';
             const latV = lat + 90;
@@ -267,7 +295,6 @@
                 const lonDigit = Math.floor(lonRes * Math.pow(20, i)) % 20;
                 code += alphabet[latDigit] + alphabet[lonDigit];
             }
-            // Format with + after 8 characters
             return code.slice(0, 8) + '+' + code.slice(8, 10);
         }
 
