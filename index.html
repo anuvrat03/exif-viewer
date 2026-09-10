@@ -4,144 +4,45 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Image EXIF & Location Inspector</title>
-
-    <!-- Leaflet CSS for map -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-
     <style>
         * { box-sizing: border-box; }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 16px;
-            background: #f5f5f5;
-            color: #333;
-            line-height: 1.5;
-        }
-        .container {
-            background: white;
-            padding: 24px;
-            border-radius: 12px;
-            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
-        }
-        h1 {
-            font-size: 22px;
-            margin: 0 0 8px;
-            color: #222;
-        }
-        .subtitle {
-            color: #666;
-            font-size: 14px;
-            margin-bottom: 20px;
-        }
-        .upload-area {
-            border: 2px dashed #b8c4d4;
-            padding: 36px 20px;
-            text-align: center;
-            border-radius: 10px;
-            margin: 16px 0;
-            cursor: pointer;
-            transition: all 0.2s;
-            background: #fafcff;
-        }
-        .upload-area:hover, .upload-area:active {
-            border-color: #007bff;
-            background: #eef6ff;
-        }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 16px; background: #f5f5f5; color: #333; line-height: 1.5; }
+        .container { background: white; padding: 24px; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
+        h1 { font-size: 22px; margin: 0 0 8px; color: #222; }
+        h3 { font-size: 16px; margin: 24px 0 12px; color: #222; }
+        .subtitle { color: #666; font-size: 14px; margin-bottom: 20px; }
+        .upload-area { border: 2px dashed #b8c4d4; padding: 30px 20px; text-align: center; border-radius: 10px; margin: 16px 0; cursor: pointer; transition: all 0.2s; background: #fafcff; }
+        .upload-area:hover, .upload-area:active { border-color: #007bff; background: #eef6ff; }
         .upload-area p { margin: 6px 0; }
         .upload-icon { font-size: 32px; }
-        .btn-row {
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-            margin: 12px 0;
-        }
-        .btn {
-            flex: 1;
-            min-width: 140px;
-            padding: 12px 16px;
-            border: none;
-            border-radius: 8px;
-            font-size: 15px;
-            font-weight: 600;
-            cursor: pointer;
-            color: white;
-            transition: opacity 0.15s;
-        }
+        .btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
+        .btn { flex: 1; min-width: 140px; padding: 12px 16px; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; color: white; }
         .btn-primary { background: #007bff; }
         .btn-secondary { background: #28a745; }
-        .btn:active { opacity: 0.8; }
         input[type="file"] { display: none; }
-        #preview {
-            max-width: 100%;
-            max-height: 320px;
-            margin: 20px 0;
-            border-radius: 10px;
-            display: none;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        #map {
-            height: 300px;
-            margin: 20px 0;
-            border-radius: 10px;
-            display: none;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        .data-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 20px 0;
-            font-size: 14px;
-        }
-        .data-table th, .data-table td {
-            border: 1px solid #e0e6ed;
-            padding: 10px 12px;
-            text-align: left;
-            word-break: break-word;
-        }
-        .data-table th {
-            background: #007bff;
-            color: white;
-            font-weight: 600;
-        }
+        #preview { max-width: 100%; max-height: 320px; margin: 20px 0; border-radius: 10px; display: none; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        #map { height: 300px; margin: 20px 0; border-radius: 10px; display: none; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .data-table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px; }
+        .data-table th, .data-table td { border: 1px solid #e0e6ed; padding: 10px 12px; text-align: left; word-break: break-word; }
+        .data-table th { background: #007bff; color: white; font-weight: 600; }
         .data-table tr:nth-child(even) { background: #f9fbfd; }
-        .status {
-            padding: 14px 16px;
-            border-radius: 8px;
-            margin: 16px 0;
-            display: none;
-            font-size: 14px;
-            font-weight: 500;
-        }
+        .status { padding: 14px 16px; border-radius: 8px; margin: 16px 0; display: none; font-size: 14px; font-weight: 500; }
         .success { background: #d4edda; color: #155724; display: block; }
-        .error   { background: #f8d7da; color: #721c24; display: block; }
-        .info    { background: #d1ecf1; color: #0c5460; display: block; }
-        .no-gps  { background: #fff3cd; color: #856404; display: block; }
-        #coordinates {
-            font-family: 'Courier New', monospace;
-            background: #f0f4f8;
-            padding: 10px 14px;
-            border-radius: 6px;
-            display: none;
-            font-size: 13px;
-            color: #1a3a5c;
-        }
-        h3 { font-size: 16px; margin: 24px 0 12px; color: #222; }
-        .footer {
-            text-align: center;
-            color: #999;
-            font-size: 12px;
-            margin-top: 24px;
-        }
+        .error { background: #f8d7da; color: #721c24; display: block; }
+        .info { background: #d1ecf1; color: #0c5460; display: block; }
+        .no-gps { background: #fff3cd; color: #856404; display: block; }
+        #coordinates { font-family: 'Courier New', monospace; background: #f0f4f8; padding: 12px 14px; border-radius: 6px; display: none; font-size: 13px; color: #1a3a5c; margin: 12px 0; }
+        #coordinates a { color: #007bff; text-decoration: none; font-weight: 600; }
+        #coordinates a:hover { text-decoration: underline; }
+        .footer { text-align: center; color: #999; font-size: 12px; margin-top: 24px; }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>📷 Image EXIF & Location Inspector</h1>
-        <p class="subtitle">Upload an image to view all embedded metadata and GPS location. Everything runs locally in your browser — nothing is uploaded to a server.</p>
+        <p class="subtitle">Upload an image to view all embedded metadata and GPS location. Everything runs locally in your browser.</p>
 
-        <!-- Two ways to pick a file -->
         <div class="upload-area" onclick="document.getElementById('fileInput').click()">
             <p class="upload-icon">📁</p>
             <p><strong>Tap to select an image</strong></p>
@@ -158,25 +59,20 @@
 
         <div id="status" class="status"></div>
         <img id="preview" alt="Preview">
+        <div id="coordinates"></div>
         <div id="map"></div>
-        <p id="coordinates"></p>
 
         <div id="metadataContainer" style="display:none;">
             <h3>📊 Extracted Metadata</h3>
             <table class="data-table" id="metadataTable">
-                <thead>
-                    <tr><th>Field</th><th>Value</th></tr>
-                </thead>
+                <thead><tr><th>Field</th><th>Value</th></tr></thead>
                 <tbody></tbody>
             </table>
         </div>
 
-        <div class="footer">
-            Runs entirely in your browser · No data uploaded · Open source
-        </div>
+        <div class="footer">Runs entirely in your browser · No data uploaded</div>
     </div>
 
-    <!-- Libraries -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/exifreader@latest/dist/exif-reader.min.js"></script>
 
@@ -199,41 +95,38 @@
             status.className = 'status info';
             status.textContent = '⏳ Processing: ' + file.name;
 
-            // Reset previous results
             currentMetadata = {};
             document.getElementById('metadataContainer').style.display = 'none';
             document.getElementById('coordinates').style.display = 'none';
             document.getElementById('map').style.display = 'none';
             document.getElementById('preview').style.display = 'none';
 
-            // Read file as ArrayBuffer (most reliable across browsers)
             let arrayBuffer;
             try {
                 arrayBuffer = await file.arrayBuffer();
             } catch (readErr) {
                 status.className = 'status error';
-                status.textContent = '❌ Could not read the file. Try: (1) Copy the photo to your Downloads folder, (2) Use "Pick from Files" button, or (3) Open this page in Samsung Internet instead of Chrome.';
-                console.error('Read error:', readErr);
+                status.textContent = '❌ Could not read the file. Try "Pick from Files" or copy to Downloads.';
                 resetInputs();
                 return;
             }
 
-            // Preview
             const preview = document.getElementById('preview');
             preview.src = URL.createObjectURL(new Blob([arrayBuffer], { type: file.type || 'image/jpeg' }));
             preview.style.display = 'block';
 
-            // Parse EXIF
             let tags;
             try {
-                tags = await ExifReader.load(arrayBuffer, { expanded: true });
+                // expanded:true gives us the full tree — this is critical for finding GPS in all places
+                tags = await ExifReader.load(arrayBuffer, { expanded: true, includeUnknown: true });
             } catch (exifErr) {
                 status.className = 'status error';
-                status.textContent = '❌ No EXIF data found. This file may be a PNG, screenshot, or the metadata was stripped.';
-                console.error('EXIF error:', exifErr);
+                status.textContent = '❌ No EXIF data found in this file.';
                 resetInputs();
                 return;
             }
+
+            console.log('Full EXIF tree:', tags); // Open DevTools to see the raw structure
 
             const addData = (label, value) => {
                 if (value !== undefined && value !== null && value !== '') {
@@ -241,7 +134,7 @@
                 }
             };
 
-            // Standard EXIF
+            // --- Standard EXIF ---
             const exif = tags.exif || {};
             addData('Camera Make', exif.Make?.description);
             addData('Camera Model', exif.Model?.description);
@@ -256,38 +149,144 @@
             addData('Software', exif.Software?.description);
             addData('White Balance', exif.WhiteBalance?.description);
             addData('Metering Mode', exif.MeteringMode?.description);
+            addData('Exposure Program', exif.ExposureProgram?.description);
+            addData('Exposure Bias', exif.ExposureBiasValue?.description);
+            addData('Max Aperture', exif.MaxApertureValue?.description);
+            addData('Light Source', exif.LightSource?.description);
+            addData('Color Space', exif.ColorSpace?.description);
+            addData('Pixel Dimensions', exif.PixelXDimension && exif.PixelYDimension ? exif.PixelXDimension.description + ' x ' + exif.PixelYDimension.description : null);
+            addData('Resolution', exif.XResolution ? exif.XResolution.description + ' dpi' : null);
 
-            // GPS
+            // --- Comprehensive GPS Extraction ---
+            // Try every possible location where GPS data might live
+            let latDecimal = null, lonDecimal = null;
+            let gpsSource = '';
+
+            // 1) Standard GPS IFD (most common)
             const gps = tags.gps || {};
-            const lat = gps.Latitude;
-            const lon = gps.Longitude;
+            if (gps.Latitude && gps.Longitude) {
+                latDecimal = parseFloat(gps.Latitude.description);
+                lonDecimal = parseFloat(gps.Longitude.description);
+                gpsSource = 'GPS IFD';
+            }
 
-            if (lat && lon) {
-                const latDecimal = parseFloat(lat.description);
-                const lonDecimal = parseFloat(lon.description);
+            // 2) Composite GPS (ExifReader computes these)
+            const composite = tags.composite || {};
+            if ((!latDecimal || !lonDecimal) && composite.GPSLatitude && composite.GPSLongitude) {
+                latDecimal = parseFloat(composite.GPSLatitude.description || composite.GPSLatitude);
+                lonDecimal = parseFloat(composite.GPSLongitude.description || composite.GPSLongitude);
+                gpsSource = 'Composite';
+            }
 
-                addData('Latitude', latDecimal.toFixed(6));
-                addData('Longitude', lonDecimal.toFixed(6));
+            // 3) XMP GPS
+            const xmp = tags.xmp || {};
+            if ((!latDecimal || !lonDecimal) && xmp.GPSLatitude && xmp.GPSLongitude) {
+                latDecimal = parseFloat(xmp.GPSLatitude.description || xmp.GPSLatitude);
+                lonDecimal = parseFloat(xmp.GPSLongitude.description || xmp.GPSLongitude);
+                gpsSource = 'XMP';
+            }
+
+            // 4) EXIF GPSInfo fallback (some Samsung models write it here)
+            if ((!latDecimal || !lonDecimal) && exif.GPSLatitude && exif.GPSLongitude) {
+                latDecimal = parseFloat(exif.GPSLatitude.description || exif.GPSLatitude);
+                lonDecimal = parseFloat(exif.GPSLongitude.description || exif.GPSLongitude);
+                gpsSource = 'EXIF GPSInfo';
+            }
+
+            // 5) Last resort: scan all top-level tags for anything GPS-like
+            if ((!latDecimal || !lonDecimal)) {
+                for (const key in tags) {
+                    if (/gps.*lat/i.test(key) && tags[key]?.description) {
+                        const val = parseFloat(tags[key].description);
+                        if (!isNaN(val) && Math.abs(val) <= 90) latDecimal = val;
+                    }
+                    if (/gps.*lon/i.test(key) && tags[key]?.description) {
+                        const val = parseFloat(tags[key].description);
+                        if (!isNaN(val) && Math.abs(val) <= 180) lonDecimal = val;
+                    }
+                }
+                if (latDecimal && lonDecimal) gpsSource = 'Fallback scan';
+            }
+
+            // --- If GPS found, display it comprehensively ---
+            if (latDecimal !== null && lonDecimal !== null && !isNaN(latDecimal) && !isNaN(lonDecimal)) {
+                const latDMS = toDMS(latDecimal, 'N', 'S');
+                const lonDMS = toDMS(lonDecimal, 'E', 'W');
+                const plusCode = encodePlusCode(latDecimal, lonDecimal);
+                const gmapsLink = `https://www.google.com/maps?q=${latDecimal},${lonDecimal}`;
+                const osmLink = `https://www.openstreetmap.org/?mlat=${latDecimal}&mlon=${lonDecimal}#map=17/${latDecimal}/${lonDecimal}`;
+
+                addData('Latitude (Decimal)', latDecimal.toFixed(6));
+                addData('Longitude (Decimal)', lonDecimal.toFixed(6));
+                addData('Latitude (DMS)', latDMS);
+                addData('Longitude (DMS)', lonDMS);
+                addData('Plus Code', plusCode);
+                addData('GPS Source', gpsSource);
                 addData('Altitude', gps.Altitude?.description);
                 addData('GPS Date', gps.GPSDateStamp?.description);
                 addData('GPS Time', gps.GPSTimeStamp?.description);
+                addData('GPS Speed', gps.GPSSpeed?.description);
+                addData('GPS Direction', gps.GPSImgDirection?.description);
 
+                showCoordinates(latDecimal, lonDecimal, latDMS, lonDMS, plusCode, gmapsLink, osmLink);
                 showMap(latDecimal, lonDecimal);
+
                 status.className = 'status success';
-                status.textContent = '✅ Image processed successfully with GPS data.';
+                status.textContent = '✅ Image processed successfully with GPS data (found in ' + gpsSource + ').';
             } else {
                 status.className = 'status no-gps';
-                status.textContent = '⚠️ No GPS data found. Metadata may have been stripped during sharing.';
+                status.textContent = '⚠️ No GPS data found in any of the standard locations (GPS IFD, Composite, XMP, EXIF). The photo was likely taken with Location OFF, or metadata was stripped.';
             }
 
             renderMetadataTable();
             resetInputs();
         }
 
+        // Convert decimal degrees to Degrees/Minutes/Seconds format
+        function toDMS(decimal, posDir, negDir) {
+            const dir = decimal >= 0 ? posDir : negDir;
+            const abs = Math.abs(decimal);
+            const degrees = Math.floor(abs);
+            const minutesFloat = (abs - degrees) * 60;
+            const minutes = Math.floor(minutesFloat);
+            const seconds = ((minutesFloat - minutes) * 60).toFixed(2);
+            return `${degrees}°${minutes}'${seconds}"${dir}`;
+        }
+
+        // Generate a simple Plus Code (Open Location Code, abbreviated)
+        // This is a simplified version for display. Full spec: https://github.com/google/open-location-code
+        function encodePlusCode(lat, lon) {
+            const alphabet = '23456789CFGHJMPQRVWX';
+            const latV = lat + 90;
+            const lonV = lon + 180;
+            const latRes = latV / 20;
+            const lonRes = lonV / 20;
+            let code = '';
+            for (let i = 0; i < 4; i++) {
+                const latDigit = Math.floor(latRes * Math.pow(20, i)) % 20;
+                const lonDigit = Math.floor(lonRes * Math.pow(20, i)) % 20;
+                code += alphabet[latDigit] + alphabet[lonDigit];
+            }
+            // Format with + after 8 characters
+            return code.slice(0, 8) + '+' + code.slice(8, 10);
+        }
+
+        function showCoordinates(lat, lon, latDMS, lonDMS, plusCode, gmapsLink, osmLink) {
+            const coordsEl = document.getElementById('coordinates');
+            coordsEl.innerHTML = `
+                <strong>📍 Location Found</strong><br>
+                <strong>Decimal:</strong> ${lat.toFixed(6)}, ${lon.toFixed(6)}<br>
+                <strong>DMS:</strong> ${latDMS} ${lonDMS}<br>
+                <strong>Plus Code:</strong> ${plusCode}<br>
+                <a href="${gmapsLink}" target="_blank" rel="noopener">🗺️ Open in Google Maps</a> &nbsp;|&nbsp;
+                <a href="${osmLink}" target="_blank" rel="noopener">🗺️ Open in OpenStreetMap</a>
+            `;
+            coordsEl.style.display = 'block';
+        }
+
         function showMap(lat, lon) {
             const mapEl = document.getElementById('map');
             mapEl.style.display = 'block';
-
             if (!map) {
                 map = L.map('map').setView([lat, lon], 15);
                 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -296,36 +295,23 @@
             } else {
                 map.setView([lat, lon], 15);
             }
-
             if (marker) map.removeLayer(marker);
             marker = L.marker([lat, lon]).addTo(map)
-                .bindPopup(`📍 ${lat.toFixed(6)}, ${lon.toFixed(6)}`)
-                .openPopup();
-
+                .bindPopup(`📍 ${lat.toFixed(6)}, ${lon.toFixed(6)}`).openPopup();
             setTimeout(() => map.invalidateSize(), 150);
-
-            const coordsEl = document.getElementById('coordinates');
-            coordsEl.textContent = `GPS: ${lat.toFixed(6)}, ${lon.toFixed(6)}`;
-            coordsEl.style.display = 'block';
         }
 
         function renderMetadataTable() {
             const container = document.getElementById('metadataContainer');
             const tbody = document.querySelector('#metadataTable tbody');
             tbody.innerHTML = '';
-
             const keys = Object.keys(currentMetadata);
-            if (keys.length === 0) {
-                container.style.display = 'none';
-                return;
-            }
-
+            if (keys.length === 0) { container.style.display = 'none'; return; }
             keys.forEach(key => {
                 const row = document.createElement('tr');
                 row.innerHTML = `<td><strong>${key}</strong></td><td>${currentMetadata[key]}</td>`;
                 tbody.appendChild(row);
             });
-
             container.style.display = 'block';
         }
     </script>
