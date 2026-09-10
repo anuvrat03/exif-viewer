@@ -34,19 +34,17 @@
         .no-gps { background: #fff3cd; color: #856404; display: block; }
         #coordinates { font-family: 'Courier New', monospace; background: #f0f4f8; padding: 12px 14px; border-radius: 6px; display: none; font-size: 13px; color: #1a3a5c; margin: 12px 0; }
         #coordinates a { color: #007bff; text-decoration: none; font-weight: 600; }
-        #coordinates a:hover { text-decoration: underline; }
         .footer { text-align: center; color: #999; font-size: 12px; margin-top: 24px; }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>📷 Image EXIF & Location Inspector</h1>
-        <p class="subtitle">Upload an image to view all embedded metadata and GPS location. Everything runs locally in your browser.</p>
+        <p class="subtitle">Upload an image to view all embedded metadata and GPS location.</p>
 
         <div class="upload-area" onclick="document.getElementById('fileInput').click()">
             <p class="upload-icon">📁</p>
             <p><strong>Tap to select an image</strong></p>
-            <p style="color: #888; font-size: 13px;">Your image never leaves your device</p>
         </div>
 
         <div class="btn-row">
@@ -71,10 +69,9 @@
         </div>
 
         <div id="debugContainer" style="display:none; margin-top: 24px;">
-            <h3>🔬 Full Metadata Dump (All Tags Found)</h3>
-            <p style="font-size: 13px; color: #666;">This shows every single tag the library could find. Search for "GPS", "Lat", "Lon", or "Location" below to spot the coordinates.</p>
+            <h3>🔬 Raw GPS Data (For Diagnosis)</h3>
             <table class="data-table" id="debugTable">
-                <thead><tr><th>Tag Name</th><th>Value</th></tr></thead>
+                <thead><tr><th>Tag</th><th>Raw Value</th></tr></thead>
                 <tbody></tbody>
             </table>
         </div>
@@ -94,6 +91,48 @@
         function resetInputs() {
             document.getElementById('fileInput').value = '';
             document.getElementById('fileInputFiles').value = '';
+        }
+
+        // Convert [deg, min, sec] rational array to decimal degrees
+        function dmsArrayToDecimal(arr) {
+            if (!arr) return null;
+            let deg, min, sec;
+
+            if (Array.isArray(arr)) {
+                deg = rationalToFloat(arr[0]);
+                min = rationalToFloat(arr[1]);
+                sec = rationalToFloat(arr[2]);
+            } else if (typeof arr === 'object' && arr.numerator !== undefined) {
+                // Single rational: {numerator, denominator}
+                deg = arr.numerator / arr.denominator;
+                return deg;
+            } else if (typeof arr === 'object') {
+                // Object with {0: {numerator, denominator}, 1: {...}, 2: {...}}
+                deg = rationalToFloat(arr[0]);
+                min = rationalToFloat(arr[1]);
+                sec = rationalToFloat(arr[2]);
+            } else if (typeof arr === 'number') {
+                return arr;
+            } else {
+                return null;
+            }
+
+            if (deg === null || min === null || sec === null) return null;
+            return deg + min / 60 + sec / 3600;
+        }
+
+        function rationalToFloat(val) {
+            if (val === null || val === undefined) return null;
+            if (typeof val === 'number') return val;
+            if (typeof val === 'string') return parseFloat(val);
+            if (typeof val === 'object') {
+                if (val.numerator !== undefined && val.denominator !== undefined) {
+                    if (val.denominator === 0) return 0;
+                    return val.numerator / val.denominator;
+                }
+                if (val.value !== undefined) return parseFloat(val.value);
+            }
+            return null;
         }
 
         async function handleFileSelect(e) {
@@ -127,7 +166,6 @@
 
             let tags;
             try {
-                // Use both expanded:true and includeUnknown:true to get ALL tags
                 tags = await ExifReader.load(arrayBuffer, { expanded: true, includeUnknown: true });
             } catch (exifErr) {
                 status.className = 'status error';
@@ -139,7 +177,7 @@
             console.log('FULL EXIF TREE:', tags);
 
             const addData = (label, value) => {
-                if (value !== undefined && value !== null && value !== '') {
+                if (value !== undefined && value !== null && value !== '' && value !== 'NaN') {
                     currentMetadata[label] = String(value);
                 }
             };
@@ -149,7 +187,6 @@
             addData('Camera Make', exif.Make?.description);
             addData('Camera Model', exif.Model?.description);
             addData('Date Taken', exif.DateTimeOriginal?.description);
-            addData('Date Created', exif.DateTime?.description);
             addData('Aperture (F-Number)', exif.FNumber?.description);
             addData('Shutter Speed', exif.ExposureTime?.description);
             addData('ISO', exif.ISOSpeedRatings?.description);
@@ -157,56 +194,62 @@
             addData('Flash', exif.Flash?.description);
             addData('Orientation', exif.Orientation?.description);
             addData('Software', exif.Software?.description);
-            addData('White Balance', exif.WhiteBalance?.description);
-            addData('Metering Mode', exif.MeteringMode?.description);
 
-            // --- GPS hunt across ALL tag groups ---
+            // --- GPS: read raw values directly ---
+            const gps = tags.gps || {};
             let latDecimal = null, lonDecimal = null, gpsSource = '';
 
-            const gps = tags.gps || {};
-            if (gps.Latitude && gps.Longitude) {
-                latDecimal = parseFloat(gps.Latitude.description);
-                lonDecimal = parseFloat(gps.Longitude.description);
-                gpsSource = 'GPS IFD';
+            // Show raw GPS values for diagnosis
+            renderDebugGps(gps);
+
+            // Try raw value first (ExifReader's `value` field contains raw array)
+            if (gps.GPSLatitude) {
+                const rawLat = gps.GPSLatitude.value || gps.GPSLatitude;
+                const rawLon = gps.GPSLongitude?.value || gps.GPSLongitude;
+                const rawLatRef = gps.GPSLatitudeRef?.value || gps.GPSLatitudeRef?.description;
+                const rawLonRef = gps.GPSLongitudeRef?.value || gps.GPSLongitudeRef?.description;
+
+                console.log('Raw Lat:', rawLat);
+                console.log('Raw Lon:', rawLon);
+                console.log('Refs:', rawLatRef, rawLonRef);
+
+                let latVal = dmsArrayToDecimal(rawLat);
+                let lonVal = dmsArrayToDecimal(rawLon);
+
+                // Apply hemisphere sign
+                const latRefStr = String(rawLatRef || 'N').trim().toUpperCase();
+                const lonRefStr = String(rawLonRef || 'E').trim().toUpperCase();
+                if (latRefStr.startsWith('S') && latVal !== null) latVal = -Math.abs(latVal);
+                if (lonRefStr.startsWith('W') && lonVal !== null) lonVal = -Math.abs(lonVal);
+
+                if (latVal !== null && lonVal !== null && !isNaN(latVal) && !isNaN(lonVal)) {
+                    latDecimal = latVal;
+                    lonDecimal = lonVal;
+                    gpsSource = 'Raw GPS array';
+                }
             }
 
-            const composite = tags.composite || {};
-            if ((!latDecimal || !lonDecimal) && (composite.GPSLatitude || composite.Latitude)) {
-                latDecimal = parseFloat(composite.GPSLatitude?.description || composite.Latitude?.description || composite.Latitude);
-                lonDecimal = parseFloat(composite.GPSLongitude?.description || composite.Longitude?.description || composite.Longitude);
-                gpsSource = 'Composite';
+            // Fallback: standard descriptions (in case raw fails)
+            if ((latDecimal === null || lonDecimal === null) && gps.Latitude && gps.Longitude) {
+                const tryLat = parseFloat(gps.Latitude.description);
+                const tryLon = parseFloat(gps.Longitude.description);
+                if (!isNaN(tryLat) && !isNaN(tryLon)) {
+                    latDecimal = tryLat;
+                    lonDecimal = tryLon;
+                    gpsSource = 'GPS descriptions';
+                }
             }
 
-            const xmp = tags.xmp || {};
-            if ((!latDecimal || !lonDecimal) && (xmp.GPSLatitude || xmp.Latitude)) {
-                latDecimal = parseFloat(xmp.GPSLatitude?.description || xmp.Latitude?.description || xmp.Latitude);
-                lonDecimal = parseFloat(xmp.GPSLongitude?.description || xmp.Longitude?.description || xmp.Longitude);
-                gpsSource = 'XMP';
-            }
-
-            if ((!latDecimal || !lonDecimal) && exif.GPSLatitude && exif.GPSLongitude) {
-                latDecimal = parseFloat(exif.GPSLatitude.description);
-                lonDecimal = parseFloat(exif.GPSLongitude.description);
-                gpsSource = 'EXIF GPSInfo';
-            }
-
-            // Fallback: scan every top-level group for GPS-like keys
-            if (!latDecimal || !lonDecimal) {
-                for (const groupName in tags) {
-                    const group = tags[groupName];
-                    if (typeof group !== 'object') continue;
-                    for (const key in group) {
-                        const val = group[key]?.description ?? group[key];
-                        if (typeof val === 'string' || typeof val === 'number') {
-                            if (/gps.*lat|^lat(itude)?$/i.test(key)) {
-                                const num = parseFloat(val);
-                                if (!isNaN(num) && Math.abs(num) <= 90) { latDecimal = num; gpsSource = `Fallback (${groupName}.${key})`; }
-                            }
-                            if (/gps.*lon|^lon(gitude)?$/i.test(key)) {
-                                const num = parseFloat(val);
-                                if (!isNaN(num) && Math.abs(num) <= 180) { lonDecimal = num; gpsSource = `Fallback (${groupName}.${key})`; }
-                            }
-                        }
+            // Fallback: composite
+            if (latDecimal === null || lonDecimal === null) {
+                const composite = tags.composite || {};
+                if (composite.GPSLatitude && composite.GPSLongitude) {
+                    const tryLat = parseFloat(composite.GPSLatitude.description);
+                    const tryLon = parseFloat(composite.GPSLongitude.description);
+                    if (!isNaN(tryLat) && !isNaN(tryLon)) {
+                        latDecimal = tryLat;
+                        lonDecimal = tryLon;
+                        gpsSource = 'Composite';
                     }
                 }
             }
@@ -224,52 +267,51 @@
                 addData('Longitude (DMS)', lonDMS);
                 addData('Plus Code', plusCode);
                 addData('GPS Source', gpsSource);
-                addData('Altitude', gps.Altitude?.description);
 
                 showCoordinates(latDecimal, lonDecimal, latDMS, lonDMS, plusCode, gmapsLink, osmLink);
                 showMap(latDecimal, lonDecimal);
 
                 status.className = 'status success';
-                status.textContent = '✅ GPS found via ' + gpsSource + '.';
+                status.textContent = '✅ GPS found: ' + latDecimal.toFixed(6) + ', ' + lonDecimal.toFixed(6);
             } else {
                 status.className = 'status no-gps';
-                status.textContent = '⚠️ No GPS found in ANY tag. Scroll down to see the FULL dump and search for GPS, Lat, or Lon.';
+                status.textContent = '⚠️ GPS tag exists but could not be decoded. See diagnostic table below.';
             }
 
-            // --- FULL metadata dump: show every tag found ---
-            renderDebugTable(tags);
             renderMetadataTable();
             resetInputs();
         }
 
-        function renderDebugTable(tags) {
+        function renderDebugGps(gps) {
+            const container = document.getElementById('debugContainer');
             const tbody = document.querySelector('#debugTable tbody');
             tbody.innerHTML = '';
             let count = 0;
 
-            for (const groupName in tags) {
-                const group = tags[groupName];
-                if (typeof group !== 'object') continue;
-                for (const key in group) {
-                    const raw = group[key];
-                    let display = '';
-                    if (raw && typeof raw === 'object' && raw.description !== undefined) {
-                        display = String(raw.description);
-                    } else if (raw !== null && raw !== undefined) {
-                        display = String(raw);
+            for (const key in gps) {
+                const item = gps[key];
+                let display = '';
+
+                if (item && typeof item === 'object') {
+                    if (item.value !== undefined) {
+                        display = 'value: ' + JSON.stringify(item.value);
+                        if (item.description !== undefined) display += ' | description: ' + item.description;
+                    } else {
+                        display = JSON.stringify(item);
                     }
-                    if (display.length > 200) display = display.slice(0, 200) + '…';
-                    const row = document.createElement('tr');
-                    const highlight = /gps|lat|lon|location|plus/i.test(groupName + key);
-                    row.style.background = highlight ? '#fff8dc' : '';
-                    row.innerHTML = `<td><strong>${groupName}.${key}</strong></td><td>${display}</td>`;
-                    tbody.appendChild(row);
-                    count++;
+                } else {
+                    display = String(item);
                 }
+
+                if (display.length > 300) display = display.slice(0, 300) + '…';
+                const row = document.createElement('tr');
+                row.innerHTML = `<td><strong>${key}</strong></td><td style="font-family: monospace; font-size: 12px;">${display}</td>`;
+                tbody.appendChild(row);
+                count++;
             }
 
             if (count > 0) {
-                document.getElementById('debugContainer').style.display = 'block';
+                container.style.display = 'block';
             }
         }
 
@@ -287,13 +329,15 @@
             const alphabet = '23456789CFGHJMPQRVWX';
             const latV = lat + 90;
             const lonV = lon + 180;
-            const latRes = latV / 20;
-            const lonRes = lonV / 20;
             let code = '';
-            for (let i = 0; i < 4; i++) {
-                const latDigit = Math.floor(latRes * Math.pow(20, i)) % 20;
-                const lonDigit = Math.floor(lonRes * Math.pow(20, i)) % 20;
+            let latRem = latV;
+            let lonRem = lonV;
+            for (let i = 0; i < 5; i++) {
+                const latDigit = Math.floor(latRem / Math.pow(20, 4 - i)) % 20;
+                const lonDigit = Math.floor(lonRem / Math.pow(20, 4 - i)) % 20;
                 code += alphabet[latDigit] + alphabet[lonDigit];
+                latRem = latRem % Math.pow(20, 4 - i);
+                lonRem = lonRem % Math.pow(20, 4 - i);
             }
             return code.slice(0, 8) + '+' + code.slice(8, 10);
         }
@@ -305,8 +349,8 @@
                 <strong>Decimal:</strong> ${lat.toFixed(6)}, ${lon.toFixed(6)}<br>
                 <strong>DMS:</strong> ${latDMS} ${lonDMS}<br>
                 <strong>Plus Code:</strong> ${plusCode}<br>
-                <a href="${gmapsLink}" target="_blank" rel="noopener">🗺️ Open in Google Maps</a> &nbsp;|&nbsp;
-                <a href="${osmLink}" target="_blank" rel="noopener">🗺️ Open in OpenStreetMap</a>
+                <a href="${gmapsLink}" target="_blank" rel="noopener">🗺️ Google Maps</a> &nbsp;|&nbsp;
+                <a href="${osmLink}" target="_blank" rel="noopener">🗺️ OpenStreetMap</a>
             `;
             coordsEl.style.display = 'block';
         }
