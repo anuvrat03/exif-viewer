@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>4-Image Audit Comparison</title>
+    <script src="https://cdn.jsdelivr.net/npm/exifreader@latest/dist/exif-reader.min.js"></script>
+    <style>
+        * { box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; max-width: 1000px; margin: 0 auto; padding: 16px; background: #f5f5f5; color: #333; line-height: 1.5; }
+        .container { background: white; padding: 24px; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
+        h1 { font-size: 22px; margin: 0 0 8px; }
+        h3 { font-size: 16px; margin: 24px 0 12px; }
+        .subtitle { color: #666; font-size: 14px; margin-bottom: 20px; }
+        .submission-block { border: 2px solid #e0e6ed; border-radius: 10px; padding: 16px; margin: 16px 0; background: #fafcff; }
+        .submission-block.old { border-color: #b8c4d4; }
+        .submission-block.new { border-color: #28a745; background: #f5fff8; }
+        .submission-title { font-size: 15px; font-weight: 700; margin: 0 0 12px; color: #333; }
+        .upload-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .upload-box { border: 2px dashed #b8c4d4; padding: 16px; text-align: center; border-radius: 10px; cursor: pointer; background: white; transition: all 0.2s; }
+        .upload-box:hover { border-color: #007bff; background: #eef6ff; }
+        .upload-box.filled { border-color: #28a745; background: #f0fff5; }
+        .upload-box p { margin: 4px 0; font-size: 13px; }
+        .upload-box .label { font-weight: 700; color: #333; font-size: 13px; }
+        .upload-box .hint { color: #888; font-size: 11px; }
+        .thumb { max-width: 100%; max-height: 140px; margin-top: 8px; border-radius: 6px; display: none; }
+        input[type="file"] { display: none; }
+        .btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin: 20px 0; }
+        .btn { padding: 14px 24px; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; color: white; }
+        .btn-primary { background: #007bff; flex: 1; }
+        .btn-primary:disabled { background: #b0c4d8; cursor: not-allowed; }
+        .verdict { padding: 18px; border-radius: 8px; font-size: 16px; font-weight: 700; margin: 16px 0; text-align: center; }
+        .verdict-ok { background: #d4edda; color: #155724; border-left: 5px solid #28a745; }
+        .verdict-warn { background: #fff3cd; color: #856404; border-left: 5px solid #ffc107; }
+        .verdict-alert { background: #f8d7da; color: #721c24; border-left: 5px solid #dc3545; }
+        .verdict-info { background: #d1ecf1; color: #0c5460; border-left: 5px solid #17a2b8; }
+        .report-table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; }
+        .report-table th, .report-table td { border: 1px solid #e0e6ed; padding: 10px 12px; text-align: left; vertical-align: top; }
+        .report-table th { background: #007bff; color: white; font-weight: 600; }
+        .report-table tr:nth-child(even) { background: #f9fbfd; }
+        .match-bar { display: inline-block; height: 12px; border-radius: 6px; background: #007bff; vertical-align: middle; margin-right: 8px; }
+        .match-bg-ok { background: #28a745; }
+        .match-bg-warn { background: #ffc107; }
+        .match-bg-alert { background: #dc3545; }
+        .summary-box { background: #f7f9fc; padding: 16px; border-radius: 8px; font-size: 14px; line-height: 1.7; border-left: 4px solid #007bff; }
+        .footer { text-align: center; color: #999; font-size: 12px; margin-top: 24px; }
+        @media (max-width: 600px) {
+            .upload-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 4-Image Audit Comparison</h1>
+        <p class="subtitle">Upload the close-up + background shot from the old submission, and the close-up + background shot from the new submission. The tool will compare instrument and location separately.</p>
+
+        <div class="submission-block old">
+            <p class="submission-title">📁 Submission A — Old / Reference</p>
+            <div class="upload-grid">
+                <div class="upload-box" id="boxA1" onclick="document.getElementById('fileA1').click()">
+                    <p class="label">📷 Close-up (A1)</p>
+                    <p class="hint">The instrument itself</p>
+                    <img class="thumb" id="thumbA1">
+                    <input type="file" id="fileA1" accept="image/*">
+                </div>
+                <div class="upload-box" id="boxA2" onclick="document.getElementById('fileA2').click()">
+                    <p class="label">🏠 Background (A2)</p>
+                    <p class="hint">Surroundings, walls, platform</p>
+                    <img class="thumb" id="thumbA2">
+                    <input type="file" id="fileA2" accept="image/*">
+                </div>
+            </div>
+        </div>
+
+        <div class="submission-block new">
+            <p class="submission-title">📁 Submission B — New / Suspect</p>
+            <div class="upload-grid">
+                <div class="upload-box" id="boxB1" onclick="document.getElementById('fileB1').click()">
+                    <p class="label">📷 Close-up (B1)</p>
+                    <p class="hint">The instrument itself</p>
+                    <img class="thumb" id="thumbB1">
+                    <input type="file" id="fileB1" accept="image/*">
+                </div>
+                <div class="upload-box" id="boxB2" onclick="document.getElementById('fileB2').click()">
+                    <p class="label">🏠 Background (B2)</p>
+                    <p class="hint">Surroundings, walls, platform</p>
+                    <img class="thumb" id="thumbB2">
+                    <input type="file" id="fileB2" accept="image/*">
+                </div>
+            </div>
+        </div>
+
+        <div class="btn-row">
+            <button class="btn btn-primary" id="compareBtn" disabled onclick="runComparison()">🔬 Compare All 4 Images</button>
+        </div>
+
+        <div id="reportCard"></div>
+
+        <div class="footer">Runs entirely in your browser · No data uploaded</div>
+    </div>
+
+    <script>
+        const files = { A1: null, A2: null, B1: null, B2: null };
+        const images = { A1: null, A2: null, B1: null, B2: null };
+        const exif = { A1: null, A2: null, B1: null, B2: null };
+
+        ['A1','A2','B1','B2'].forEach(id => {
+            document.getElementById('file' + id).addEventListener('change', (e) => handleSelect(e, id));
+        });
+
+        async function handleSelect(e, id) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const thumb = document.getElementById('thumb' + id);
+            thumb.src = URL.createObjectURL(file);
+            thumb.style.display = 'block';
+            document.getElementById('box' + id).classList.add('filled');
+
+            const buffer = await file.arrayBuffer();
+            const tags = await ExifReader.load(buffer, { expanded: true }).catch(() => ({}));
+            const img = await loadImage(file);
+
+            files[id] = file;
+            images[id] = img;
+            exif[id] = tags;
+
+            if (files.A1 && files.A2 && files.B1 && files.B2) {
+                document.getElementById('compareBtn').disabled = false;
+            }
+        }
+
+        function loadImage(file) {
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    const MAX = 512;
+                    let w = img.width, h = img.height;
+                    if (w > MAX || h > MAX) {
+                        const scale = Math.min(MAX / w, MAX / h);
+                        w = Math.round(w * scale);
+                        h = Math.round(h * scale);
+                    }
+                    canvas.width = w; canvas.height = h;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, w, h);
+                    resolve({ canvas, ctx, width: w, height: h, originalWidth: img.width, originalHeight: img.height });
+                };
+                img.src = URL.createObjectURL(file);
+            });
+        }
+
+        async function sha256(buffer) {
+            const h = await crypto.subtle.digest('SHA-256', buffer);
+            return Array.from(new Uint8Array(h)).map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+
+        function averageHash(imgData) {
+            const small = document.createElement('canvas');
+            small.width = 8; small.height = 8;
+            const sctx = small.getContext('2d');
+            sctx.drawImage(imgData.canvas, 0, 0, 8, 8);
+            const data = sctx.getImageData(0, 0, 8, 8).data;
+            const grays = [];
+            for (let i = 0; i < data.length; i += 4) {
+                grays.push(0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2]);
+            }
+            const mean = grays.reduce((a, b) => a + b, 0) / grays.length;
+            return grays.map(g => g > mean ? 1 : 0);
+        }
+
+        function hammingDistance(a, b) {
+            let d = 0;
+            for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) d++;
+            return d;
+        }
+
+        function getEdgeMap(imgData) {
+            const { ctx, width, height } = imgData;
+            const img = ctx.getImageData(0, 0, width, height);
+            const gray = new Float32Array(width * height);
+            for (let i = 0; i < img.data.length; i += 4) {
+                gray[i/4] = 0.299 * img.data[i] + 0.587 * img.data[i+1] + 0.114 * img.data[i+2];
+            }
+            const edges = new Uint8Array(width * height);
+            for (let y = 1; y < height - 1; y++) {
+                for (let x = 1; x < width - 1; x++) {
+                    const i = y * width + x;
+                    const gx = -gray[i-width-1] + gray[i-width+1] - 2*gray[i-1] + 2*gray[i+1] - gray[i+width-1] + gray[i+width+1];
+                    const gy = -gray[i-width-1] - 2*gray[i-width] - gray[i-width+1] + gray[i+width-1] + 2*gray[i+width] + gray[i+width+1];
+                    edges[i] = Math.sqrt(gx*gx + gy*gy) > 60 ? 255 : 0;
+                }
+            }
+            return { edges, width, height };
+        }
+
+        function compareEdges(e1, e2) {
+            const w = Math.min(e1.width, e2.width);
+            const h = Math.min(e1.height, e2.height);
+            let matches = 0, total = 0;
+            for (let y = 0; y < h; y++) {
+                for (let x = 0; x < w; x++) {
+                    const i1 = y * e1.width + x;
+                    const i2 = y * e2.width + x;
+                    if (e1.edges[i1] || e2.edges[i2]) {
+                        total++;
+                        if (e1.edges[i1] === e2.edges[i2]) matches++;
+                    }
+                }
+            }
+            return total === 0 ? 0 : matches / total;
+        }
+
+        function colorHistogram(imgData) {
+            const { ctx, width, height } = imgData;
+            const img = ctx.getImageData(0, 0, width, height);
+            const hist = new Array(64).fill(0);
+            for (let i = 0; i < img.data.length; i += 4) {
+                const r = img.data[i] >> 4;
+                const g = img.data[i+1] >> 4;
+                const b = img.data[i+2] >> 4;
+                const idx = (r * 16) + (g * 4) + Math.floor(b / 4);
+                hist[Math.min(idx, 63)]++;
+            }
+            const total = width * height;
+            return hist.map(v => v / total);
+        }
+
+        function histogramDistance(h1, h2) {
+            let d = 0;
+            for (let i = 0; i < h1.length; i++) d += Math.abs(h1[i] - h2[i]);
+            return d / 2;
+        }
+
+        async function runComparison() {
+            const btn = document.getElementById('compareBtn');
+            btn.disabled = true; btn.textContent = '⏳ Analyzing all 4 images...';
+
+            // Load buffers for hashing
+            const bufA1 = await files.A1.arrayBuffer();
+            const bufA2 = await files.A2.arrayBuffer();
+            const bufB1 = await files.B1.arrayBuffer();
+            const bufB2 = await files.B2.arrayBuffer();
+
+            const hashA1 = await sha256(bufA1);
+            const hashA2 = await sha256(bufA2);
+            const hashB1 = await sha256(bufB1);
+            const hashB2 = await sha256(bufB2);
+
+            // Instrument comparison: A1 vs B1
+            const ahA1 = averageHash(images.A1);
+            const ahB1 = averageHash(images.B1);
+            const instrumentHamming = hammingDistance(ahA1, ahB1);
+            const instrumentEdge = compareEdges(getEdgeMap(images.A1), getEdgeMap(images.B1));
+            const instrumentColor = 1 - histogramDistance(colorHistogram(images.A1), colorHistogram(images.B1));
+            const instrumentExact = hashA1 === hashB1;
+
+            // Location comparison: A2 vs B2
+            const ahA2 = averageHash(images.A2);
+            const ahB2 = averageHash(images.B2);
+            const locationHamming = hammingDistance(ahA2, ahB2);
+            const locationEdge = compareEdges(getEdgeMap(images.A2), getEdgeMap(images.B2));
+            const locationColor = 1 - histogramDistance(colorHistogram(images.A2), colorHistogram(images.B2));
+            const locationExact = hashA2 === hashB2;
+
+            renderReport({
+                hashA1, hashA2, hashB1, hashB2,
+                instrumentExact, locationExact,
+                instrumentHamming, instrumentEdge, instrumentColor,
+                locationHamming, locationEdge, locationColor
+            });
+
+            btn.disabled = false; btn.textContent = '🔬 Compare All 4 Images';
+        }
+
+        function rating(value, thresholds) {
+            // thresholds = [high, medium] ; higher value = more similar
+            if (value >= thresholds[0]) return { label: 'Match', cls: 'verdict-ok' };
+            if (value >= thresholds[1]) return { label: 'Partial', cls: 'verdict-warn' };
+            return { label: 'Different', cls: 'verdict-alert' };
+        }
+
+        function renderReport(d) {
+            // Decide verdict for instrument (lower hamming = more similar)
+            const instrumentSame = d.instrumentExact || d.instrumentHamming <= 6 || (d.instrumentEdge > 0.65 && d.instrumentColor > 0.75);
+            const instrumentMaybe = !instrumentSame && (d.instrumentHamming <= 15 || d.instrumentEdge > 0.5);
+            const locationSame = d.locationExact || d.locationHamming <= 6 || (d.locationEdge > 0.6 && d.locationColor > 0.7);
+            const locationMaybe = !locationSame && (d.locationHamming <= 15 || d.locationEdge > 0.45);
+
+            let verdictText, verdictClass;
+            if (instrumentSame && locationSame) {
+                verdictClass = 'verdict-ok';
+                verdictText = '✅ Same instrument, same location';
+            } else if (instrumentSame && !locationSame && !locationMaybe) {
+                verdictClass = 'verdict-alert';
+                verdictText = '⚠️ Same instrument, DIFFERENT location — possible relocation or reused instrument photo';
+            } else if (instrumentSame && locationMaybe) {
+                verdictClass = 'verdict-warn';
+                verdictText = '⚠️ Same instrument, background partially matches — verify manually';
+            } else if (!instrumentSame && locationSame) {
+                verdictClass = 'verdict-warn';
+                verdictText = '⚠️ Different instrument, same background — different device at the same site';
+            } else if (instrumentMaybe || locationMaybe) {
+                verdictClass = 'verdict-info';
+                verdictText = 'ℹ️ Inconclusive — partial matches detected; human review recommended';
+            } else {
+                verdictClass = 'verdict-info';
+                verdictText = '🔀 Different instrument, different location';
+            }
+
+            const pct = (v) => (v * 100).toFixed(0) + '%';
+            const edgeClass = (v) => v > 0.6 ? 'match-bg-ok' : v > 0.4 ? 'match-bg-warn' : 'match-bg-alert';
+            const hashClass = (h) => h <= 6 ? 'match-bg-ok' : h <= 15 ? 'match-bg-warn' : 'match-bg-alert';
+
+            const rows = `
+                <h3>📷 Instrument Comparison (A1 ↔ B1 — close-ups)</h3>
+                <table class="report-table">
+                    <tr><th>Metric</th><th>Result</th><th>Meaning</th></tr>
+                    <tr><td>Exact file match</td><td>${d.instrumentExact ? 'YES' : 'No'}</td><td>${d.instrumentExact ? '<span class="match-bg-alert">Same file resubmitted</span>' : 'Different files'}</td></tr>
+                    <tr><td>Visual hash distance</td><td>${d.instrumentHamming} / 64</td><td><span class="match-bar ${hashClass(d.instrumentHamming)}" style="width:${Math.max(4, 100 - d.instrumentHamming * 1.5)}px;"></span>${d.instrumentHamming <= 6 ? 'Visually identical' : d.instrumentHamming <= 15 ? 'Similar' : 'Different'}</td></tr>
+                    <tr><td>Edge structure match</td><td>${pct(d.instrumentEdge)}</td><td><span class="match-bar ${edgeClass(d.instrumentEdge)}" style="width:${pct(d.instrumentEdge)};"></span>${d.instrumentEdge > 0.65 ? 'Same shape/edges' : d.instrumentEdge > 0.4 ? 'Partial match' : 'Different structure'}</td></tr>
+                    <tr><td>Color match</td><td>${pct(d.instrumentColor)}</td><td>${d.instrumentColor > 0.75 ? 'Same colors' : d.instrumentColor > 0.5 ? 'Similar colors' : 'Different colors'}</td></tr>
+                </table>
+
+                <h3>🏠 Background/Location Comparison (A2 ↔ B2 — surroundings)</h3>
+                <table class="report-table">
+                    <tr><th>Metric</th><th>Result</th><th>Meaning</th></tr>
+                    <tr><td>Exact file match</td><td>${d.locationExact ? 'YES' : 'No'}</td><td>${d.locationExact ? '<span class="match-bg-alert">Same file resubmitted</span>' : 'Different files'}</td></tr>
+                    <tr><td>Visual hash distance</td><td>${d.locationHamming} / 64</td><td><span class="match-bar ${hashClass(d.locationHamming)}" style="width:${Math.max(4, 100 - d.locationHamming * 1.5)}px;"></span>${d.locationHamming <= 6 ? 'Visually identical' : d.locationHamming <= 15 ? 'Similar' : 'Different'}</td></tr>
+                    <tr><td>Edge structure match</td><td>${pct(d.locationEdge)}</td><td><span class="match-bar ${edgeClass(d.locationEdge)}" style="width:${pct(d.locationEdge)};"></span>${d.locationEdge > 0.6 ? 'Same background structure' : d.locationEdge > 0.4 ? 'Partial match' : 'Different background'}</td></tr>
+                    <tr><td>Color match</td><td>${pct(d.locationColor)}</td><td>${d.locationColor > 0.7 ? 'Same lighting/palette' : d.locationColor > 0.5 ? 'Similar palette' : 'Different lighting/colors'}</td></tr>
+                </table>
+            `;
+
+            // Plain-English summary
+            const summary = buildSummary(d, instrumentSame, instrumentMaybe, locationSame, locationMaybe);
+
+            const report = `
+                <div id="reportCard">
+                    <h3>🧾 Audit Verdict</h3>
+                    <div class="verdict ${verdictClass}">${verdictText}</div>
+                    ${rows}
+                    <h3>📋 Plain-English Summary</h3>
+                    <div class="summary-box">${summary}</div>
+                    <p style="color:#888; font-size:12px; margin-top:16px;">⚠️ This is a technical comparison based on image hashing, edge structure, and color histograms. It is a triage aid, not a definitive determination. Human review is required before acting on any audit conclusion.</p>
+                </div>
+            `;
+
+            document.getElementById('reportCard').outerHTML = report;
+        }
+
+        function buildSummary(d, instrumentSame, instrumentMaybe, locationSame, locationMaybe) {
+            const parts = [];
+
+            // Overall verdict in words
+            if (instrumentSame && locationSame) {
+                parts.push(`<p><strong>✅ The two submissions appear to show the <u>same instrument at the same location</u>.</strong></p>`);
+                parts.push(`<p>Both the close-up and the background match strongly. This is consistent with a legitimate repeat submission, or the same equipment still at the same site.</p>`);
+            } else if (instrumentSame && !locationSame) {
+                parts.push(`<p><strong>⚠️ Same instrument, but the <u>background does not match</u>.</strong></p>`);
+                parts.push(`<p>The instrument in the close-up looks the same, but the surrounding (walls, platform, or environment) is different. This could mean:</p>`);
+                parts.push(`<ul>
+                    <li>The instrument has genuinely <strong>moved to a new location</strong> (legitimate relocation)</li>
+                    <li>An <strong>old close-up photo</strong> of the instrument was reused with a new background shot</li>
+                    <li>Different angle, lighting, or distance — verify visually</li>
+                </ul>`);
+                parts.push(`<p><strong>Recommended action:</strong> Compare the two close-ups side by side visually. If they look pixel-identical, you likely have a reused photo.</p>`);
+            } else if (!instrumentSame && locationSame) {
+                parts.push(`<p><strong>⚠️ The backgrounds match, but the instrument looks <u>different</u>.</strong></p>`);
+                parts.push(`<p>Same location, different equipment. This could mean:</p>`);
+                parts.push(`<ul>
+                    <li>A different instrument is at the same site (legitimate)</li>
+                    <li>Someone replaced the equipment photo</li>
+                </ul>`);
+            } else if (instrumentSame === false && locationSame === false && !instrumentMaybe && !locationMaybe) {
+                parts.push(`<p><strong>🔀 These submissions appear to be <u>completely unrelated</u>.</strong></p>`);
+                parts.push(`<p>Neither the instrument nor the background matches. Either this is genuinely a new submission (new equipment, new site), or the images cannot be compared for a technical reason (very different lighting, angle, or resolution).</p>`);
+            } else {
+                parts.push(`<p><strong>ℹ️ Inconclusive — partial matches detected.</strong></p>`);
+                parts.push(`<p>The tool found some visual similarities but couldn't confirm a clear match. This usually happens when:</p>`);
+                parts.push(`<ul>
+                    <li>The photos are taken from very different angles</li>
+                    <li>Lighting conditions changed significantly</li>
+                    <li>The instrument or background was partially changed</li>
+                </ul>`);
+                parts.push(`<p><strong>Recommended action:</strong> Human visual comparison is required.</p>`);
+            }
+
+            // Signal details
+            parts.push(`<p style="margin-top:14px;"><strong>Key signals:</strong></p>`);
+            parts.push(`<ul style="font-size:13px;">
+                <li>Close-up hash distance: <b>${d.instrumentHamming}/64</b> → ${d.instrumentHamming <= 6 ? 'visually identical' : d.instrumentHamming <= 15 ? 'similar' : 'different'}</li>
+                <li>Close-up edge match: <b>${(d.instrumentEdge*100).toFixed(0)}%</b> → ${d.instrumentEdge > 0.65 ? 'same shape' : d.instrumentEdge > 0.4 ? 'partial shape match' : 'different shape'}</li>
+                <li>Background hash distance: <b>${d.locationHamming}/64</b> → ${d.locationHamming <= 6 ? 'visually identical' : d.locationHamming <= 15 ? 'similar' : 'different'}</li>
+                <li>Background edge match: <b>${(d.locationEdge*100).toFixed(0)}%</b> → ${d.locationEdge > 0.6 ? 'same surroundings' : d.locationEdge > 0.4 ? 'partial surroundings match' : 'different surroundings'}</li>
+                <li>Background color match: <b>${(d.locationColor*100).toFixed(0)}%</b> → ${d.locationColor > 0.7 ? 'same lighting/palette' : 'different lighting/palette'}</li>
+            </ul>`);
+
+            return parts.join('');
+        }
+    </script>
+</body>
+</html>
