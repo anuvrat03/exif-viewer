@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image EXIF & Location Inspector</title>
+
+    <!-- Leaflet CSS for map -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 16px;
+            background: #f5f5f5;
+            color: #333;
+            line-height: 1.5;
+        }
+        .container {
+            background: white;
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+        }
+        h1 {
+            font-size: 22px;
+            margin: 0 0 8px;
+            color: #222;
+        }
+        .subtitle {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 20px;
+        }
+        .upload-area {
+            border: 2px dashed #b8c4d4;
+            padding: 36px 20px;
+            text-align: center;
+            border-radius: 10px;
+            margin: 16px 0;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: #fafcff;
+        }
+        .upload-area:hover, .upload-area:active {
+            border-color: #007bff;
+            background: #eef6ff;
+        }
+        .upload-area p { margin: 6px 0; }
+        .upload-icon { font-size: 32px; }
+        .btn-row {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin: 12px 0;
+        }
+        .btn {
+            flex: 1;
+            min-width: 140px;
+            padding: 12px 16px;
+            border: none;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            color: white;
+            transition: opacity 0.15s;
+        }
+        .btn-primary { background: #007bff; }
+        .btn-secondary { background: #28a745; }
+        .btn:active { opacity: 0.8; }
+        input[type="file"] { display: none; }
+        #preview {
+            max-width: 100%;
+            max-height: 320px;
+            margin: 20px 0;
+            border-radius: 10px;
+            display: none;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        #map {
+            height: 300px;
+            margin: 20px 0;
+            border-radius: 10px;
+            display: none;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            font-size: 14px;
+        }
+        .data-table th, .data-table td {
+            border: 1px solid #e0e6ed;
+            padding: 10px 12px;
+            text-align: left;
+            word-break: break-word;
+        }
+        .data-table th {
+            background: #007bff;
+            color: white;
+            font-weight: 600;
+        }
+        .data-table tr:nth-child(even) { background: #f9fbfd; }
+        .status {
+            padding: 14px 16px;
+            border-radius: 8px;
+            margin: 16px 0;
+            display: none;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        .success { background: #d4edda; color: #155724; display: block; }
+        .error   { background: #f8d7da; color: #721c24; display: block; }
+        .info    { background: #d1ecf1; color: #0c5460; display: block; }
+        .no-gps  { background: #fff3cd; color: #856404; display: block; }
+        #coordinates {
+            font-family: 'Courier New', monospace;
+            background: #f0f4f8;
+            padding: 10px 14px;
+            border-radius: 6px;
+            display: none;
+            font-size: 13px;
+            color: #1a3a5c;
+        }
+        h3 { font-size: 16px; margin: 24px 0 12px; color: #222; }
+        .footer {
+            text-align: center;
+            color: #999;
+            font-size: 12px;
+            margin-top: 24px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📷 Image EXIF & Location Inspector</h1>
+        <p class="subtitle">Upload an image to view all embedded metadata and GPS location. Everything runs locally in your browser — nothing is uploaded to a server.</p>
+
+        <!-- Two ways to pick a file -->
+        <div class="upload-area" onclick="document.getElementById('fileInput').click()">
+            <p class="upload-icon">📁</p>
+            <p><strong>Tap to select an image</strong></p>
+            <p style="color: #888; font-size: 13px;">Your image never leaves your device</p>
+        </div>
+
+        <div class="btn-row">
+            <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">📷 Pick from Gallery</button>
+            <button class="btn btn-secondary" onclick="document.getElementById('fileInputFiles').click()">📂 Pick from Files</button>
+        </div>
+
+        <input type="file" id="fileInput" accept="image/*">
+        <input type="file" id="fileInputFiles" accept="image/jpeg,image/png,image/heic,image/heif,image/webp,image/*">
+
+        <div id="status" class="status"></div>
+        <img id="preview" alt="Preview">
+        <div id="map"></div>
+        <p id="coordinates"></p>
+
+        <div id="metadataContainer" style="display:none;">
+            <h3>📊 Extracted Metadata</h3>
+            <table class="data-table" id="metadataTable">
+                <thead>
+                    <tr><th>Field</th><th>Value</th></tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+
+        <div class="footer">
+            Runs entirely in your browser · No data uploaded · Open source
+        </div>
+    </div>
+
+    <!-- Libraries -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/exifreader@latest/dist/exif-reader.min.js"></script>
+
+    <script>
+        let map = null, marker = null, currentMetadata = {};
+
+        document.getElementById('fileInput').addEventListener('change', handleFileSelect);
+        document.getElementById('fileInputFiles').addEventListener('change', handleFileSelect);
+
+        function resetInputs() {
+            document.getElementById('fileInput').value = '';
+            document.getElementById('fileInputFiles').value = '';
+        }
+
+        async function handleFileSelect(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const status = document.getElementById('status');
+            status.className = 'status info';
+            status.textContent = '⏳ Processing: ' + file.name;
+
+            // Reset previous results
+            currentMetadata = {};
+            document.getElementById('metadataContainer').style.display = 'none';
+            document.getElementById('coordinates').style.display = 'none';
+            document.getElementById('map').style.display = 'none';
+            document.getElementById('preview').style.display = 'none';
+
+            // Read file as ArrayBuffer (most reliable across browsers)
+            let arrayBuffer;
+            try {
+                arrayBuffer = await file.arrayBuffer();
+            } catch (readErr) {
+                status.className = 'status error';
+                status.textContent = '❌ Could not read the file. Try: (1) Copy the photo to your Downloads folder, (2) Use "Pick from Files" button, or (3) Open this page in Samsung Internet instead of Chrome.';
+                console.error('Read error:', readErr);
+                resetInputs();
+                return;
+            }
+
+            // Preview
+            const preview = document.getElementById('preview');
+            preview.src = URL.createObjectURL(new Blob([arrayBuffer], { type: file.type || 'image/jpeg' }));
+            preview.style.display = 'block';
+
+            // Parse EXIF
+            let tags;
+            try {
+                tags = await ExifReader.load(arrayBuffer, { expanded: true });
+            } catch (exifErr) {
+                status.className = 'status error';
+                status.textContent = '❌ No EXIF data found. This file may be a PNG, screenshot, or the metadata was stripped.';
+                console.error('EXIF error:', exifErr);
+                resetInputs();
+                return;
+            }
+
+            const addData = (label, value) => {
+                if (value !== undefined && value !== null && value !== '') {
+                    currentMetadata[label] = String(value);
+                }
+            };
+
+            // Standard EXIF
+            const exif = tags.exif || {};
+            addData('Camera Make', exif.Make?.description);
+            addData('Camera Model', exif.Model?.description);
+            addData('Date Taken', exif.DateTimeOriginal?.description);
+            addData('Date Created', exif.DateTime?.description);
+            addData('Aperture (F-Number)', exif.FNumber?.description);
+            addData('Shutter Speed', exif.ExposureTime?.description);
+            addData('ISO', exif.ISOSpeedRatings?.description);
+            addData('Focal Length', exif.FocalLength?.description);
+            addData('Flash', exif.Flash?.description);
+            addData('Orientation', exif.Orientation?.description);
+            addData('Software', exif.Software?.description);
+            addData('White Balance', exif.WhiteBalance?.description);
+            addData('Metering Mode', exif.MeteringMode?.description);
+
+            // GPS
+            const gps = tags.gps || {};
+            const lat = gps.Latitude;
+            const lon = gps.Longitude;
+
+            if (lat && lon) {
+                const latDecimal = parseFloat(lat.description);
+                const lonDecimal = parseFloat(lon.description);
+
+                addData('Latitude', latDecimal.toFixed(6));
+                addData('Longitude', lonDecimal.toFixed(6));
+                addData('Altitude', gps.Altitude?.description);
+                addData('GPS Date', gps.GPSDateStamp?.description);
+                addData('GPS Time', gps.GPSTimeStamp?.description);
+
+                showMap(latDecimal, lonDecimal);
+                status.className = 'status success';
+                status.textContent = '✅ Image processed successfully with GPS data.';
+            } else {
+                status.className = 'status no-gps';
+                status.textContent = '⚠️ No GPS data found. Metadata may have been stripped during sharing.';
+            }
+
+            renderMetadataTable();
+            resetInputs();
+        }
+
+        function showMap(lat, lon) {
+            const mapEl = document.getElementById('map');
+            mapEl.style.display = 'block';
+
+            if (!map) {
+                map = L.map('map').setView([lat, lon], 15);
+                L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '© OpenStreetMap contributors'
+                }).addTo(map);
+            } else {
+                map.setView([lat, lon], 15);
+            }
+
+            if (marker) map.removeLayer(marker);
+            marker = L.marker([lat, lon]).addTo(map)
+                .bindPopup(`📍 ${lat.toFixed(6)}, ${lon.toFixed(6)}`)
+                .openPopup();
+
+            setTimeout(() => map.invalidateSize(), 150);
+
+            const coordsEl = document.getElementById('coordinates');
+            coordsEl.textContent = `GPS: ${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+            coordsEl.style.display = 'block';
+        }
+
+        function renderMetadataTable() {
+            const container = document.getElementById('metadataContainer');
+            const tbody = document.querySelector('#metadataTable tbody');
+            tbody.innerHTML = '';
+
+            const keys = Object.keys(currentMetadata);
+            if (keys.length === 0) {
+                container.style.display = 'none';
+                return;
+            }
+
+            keys.forEach(key => {
+                const row = document.createElement('tr');
+                row.innerHTML = `<td><strong>${key}</strong></td><td>${currentMetadata[key]}</td>`;
+                tbody.appendChild(row);
+            });
+
+            container.style.display = 'block';
+        }
+    </script>
+</body>
+</html>
